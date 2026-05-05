@@ -104,6 +104,12 @@ public class MainServer {
 
                 StringBuilder stringBuilder = new StringBuilder();
     
+                Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                    // This code ONLY runs when the terminal is closed or Ctrl+C is pressed
+                    log.info("Shutdown hook activated");
+                    commandsList.get("save").run(new String[1], null);
+                    System.out.println("Collection saved through shutdown hook");
+                }));
                 while (working) {
                     int selectionAmount = selector.selectNow();
                     if (selectionAmount > 0) {

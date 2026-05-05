@@ -6,6 +6,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -46,23 +47,24 @@ class MainClient {
         try {
             Terminal terminal = TerminalBuilder.builder().system(true).build();
             History history = new DefaultHistory();
-            UUID clientUUID = null;
+            final UUID clientUUID = UUID.randomUUID();
             boolean works = true;
             while (works) {
                 if (clientUUID != null) {
                     System.out.println("Соединение было потеряно. Переподключаемся...");
                 }
-                clientUUID = UUID.randomUUID();
                 System.out.println("UUID Клиента: " + clientUUID);
                 try (DatagramSocket clientSocket = new DatagramSocket()) {
                     try {
-                        InetAddress serverAddr;
+                        final InetAddress serverAddr;
+                        InetAddress tempAddr;
                         try {
-                            serverAddr = InetAddress.getByName("helios");
-                        } catch (Exception e) {
+                            tempAddr = InetAddress.getByName("helios");
+                        } catch (UnknownHostException e) {
                             System.out.println("Создание клиента на helios провалилась, делаем на localhost...");
-                            serverAddr = InetAddress.getLocalHost();
+                            tempAddr = InetAddress.getLocalHost();
                         }
+                        serverAddr = tempAddr;
                         clientSocket.setSoTimeout(5000);
     
         
@@ -197,6 +199,19 @@ class MainClient {
                                 .highlighter(consoleHighlighter)
                                 .build();
                         consoleManager.setReader(reader);
+
+                        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                                if (!clientSocket.isClosed()) {
+                                    Packet sendPacketShutdown = new Packet(clientUUID, 1, 0, null);
+                                    byte[] serializedPacketShutdown = SerializationUtils.serialize(sendPacketShutdown); 
+                                    DatagramPacket sendDatagramPacketShutdown = new DatagramPacket(serializedPacketShutdown, 1024, serverAddr, 37582);
+                                    try {
+                                        clientSocket.send(sendDatagramPacketShutdown);
+                                    } catch (IOException e) {
+                                        e.printStackTrace();
+                                    }
+                                }
+                        }));
         
                         while (true) {
                             String input = reader.readLine("> ");
