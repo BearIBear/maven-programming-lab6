@@ -85,10 +85,13 @@ public class MainServer {
         String[] commandNames = commandsList.keySet().toArray(String[]::new);
 
         try {
-            Terminal terminal = TerminalBuilder.builder().system(true).nativeSignals(true).signalHandler(Terminal.SignalHandler.SIG_IGN).build();
+            Terminal terminal = TerminalBuilder.builder().system(true).nativeSignals(true).build();
             terminal.enterRawMode();
             NonBlockingReader reader = terminal.reader();
-            
+            terminal.handle(Terminal.Signal.INT, signal -> {
+                log.info("Shutdown hook activator activated");
+                System.exit(0); 
+            });
             String serverCommand = "";
             char readCharacter = 0;
     
@@ -105,11 +108,11 @@ public class MainServer {
                 StringBuilder stringBuilder = new StringBuilder();
     
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                    // This code ONLY runs when the terminal is closed or Ctrl+C is pressed
                     log.info("Shutdown hook activated");
                     commandsList.get("save").run(new String[1], null);
                     System.out.println("Collection saved through shutdown hook");
                 }));
+
                 while (working) {
                     int selectionAmount = selector.selectNow();
                     if (selectionAmount > 0) {
@@ -160,27 +163,35 @@ public class MainServer {
                         }
                     }
 
-                    int codeCharacter = reader.read(10L);
+                    int codeCharacter;
+                    try {
+                        codeCharacter = reader.read(10L);
+                    } catch (Exception e) {
+                        codeCharacter = -1;
+                    }
                     if (codeCharacter >= 0) {
                         readCharacter = (char) codeCharacter;
-                        System.out.println(codeCharacter);
                         if (readCharacter == '\r' || readCharacter == '\n' || codeCharacter == 10 || codeCharacter == 13 || codeCharacter == 3) {
                             System.out.print("\r\n");
                             serverCommand = stringBuilder.toString().trim();
                             stringBuilder.setLength(0);
                             if (serverCommand.equals("exit") || codeCharacter == 3) {
                                 log.info("You are absolutely right! We shouldn't just save the collection — we should shut down the server");
-                                commandsList.get("save").run(new String[1], null);
+                                System.exit(0);
                                 working = false;
                             } else if (serverCommand.equals("save")) {
                                 log.info("Collection saved");
                                 commandsList.get("save").run(new String[1], null);
                             }
                         } else if (codeCharacter == 8 || codeCharacter == 127) {
-                            System.out.print(readCharacter);
-                            System.out.print(" ");
-                            System.out.print(readCharacter);
-                            stringBuilder.delete(stringBuilder.length() - 1, stringBuilder.length());
+                            if (stringBuilder.length() != 0) {
+                                System.out.print(readCharacter);
+                                System.out.print(" ");
+                                System.out.print(readCharacter);
+                                stringBuilder.delete(stringBuilder.length() - 1, stringBuilder.length());
+                            }
+                        } else if (codeCharacter == 3) {
+                            System.exit(0);
                         } else {
                             stringBuilder.append(readCharacter);
                             System.out.print(readCharacter);

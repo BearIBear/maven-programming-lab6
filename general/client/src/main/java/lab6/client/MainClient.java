@@ -20,6 +20,7 @@ import org.jline.reader.Highlighter;
 import org.jline.reader.History;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
+import org.jline.reader.UserInterruptException;
 import org.jline.reader.impl.completer.AggregateCompleter;
 import org.jline.reader.impl.completer.StringsCompleter;
 import org.jline.reader.impl.history.DefaultHistory;
@@ -44,15 +45,17 @@ import org.apache.commons.lang3.SerializationUtils;
  */
 class MainClient {
     public static void main(String[] args) {
+        boolean first_time = true;
         try {
             Terminal terminal = TerminalBuilder.builder().system(true).build();
             History history = new DefaultHistory();
             final UUID clientUUID = UUID.randomUUID();
             boolean works = true;
             while (works) {
-                if (clientUUID != null) {
+                if (!first_time) {
                     System.out.println("Соединение было потеряно. Переподключаемся...");
                 }
+                first_time = false;
                 System.out.println("UUID Клиента: " + clientUUID);
                 try (DatagramSocket clientSocket = new DatagramSocket()) {
                     try {
@@ -199,58 +202,57 @@ class MainClient {
                                 .highlighter(consoleHighlighter)
                                 .build();
                         consoleManager.setReader(reader);
-
-                        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                                if (!clientSocket.isClosed()) {
-                                    Packet sendPacketShutdown = new Packet(clientUUID, 1, 0, null);
-                                    byte[] serializedPacketShutdown = SerializationUtils.serialize(sendPacketShutdown); 
-                                    DatagramPacket sendDatagramPacketShutdown = new DatagramPacket(serializedPacketShutdown, 1024, serverAddr, 37582);
-                                    try {
-                                        clientSocket.send(sendDatagramPacketShutdown);
-                                    } catch (IOException e) {
-                                        e.printStackTrace();
+        
+                        try {
+                            while (true) {
+                                String input = reader.readLine("> ");
+                                String[] tokens = input.strip().split(" ");
+                                String commandName = tokens[0];
+                                if (commandNamesList.contains(commandName)) {
+                                    CommandPayload commandPayload = new CommandPayload(commandName, tokens, null);
+            
+                                    if (commandName.contains("add") || commandName.contains("update")) {
+                                        commandPayload.setBand(consoleManager.askMusicBand());
                                     }
-                                }
-                        }));
-        
-                        while (true) {
-                            String input = reader.readLine("> ");
-                            String[] tokens = input.strip().split(" ");
-                            String commandName = tokens[0];
-                            if (commandNamesList.contains(commandName)) {
-                                CommandPayload commandPayload = new CommandPayload(commandName, tokens, null);
-        
-                                if (commandName.contains("add") || commandName.contains("update")) {
-                                    commandPayload.setBand(consoleManager.askMusicBand());
-                                }
-        
-                                packets = (ArrayList<Packet>) Packet.packObject(clientUUID, commandPayload);
-                                Packet.clientSendPackets(clientSocket, packets, serverAddr, 37582);
-        
-                                receiveBuffer = new byte[1024];
-                                receivePacket = new DatagramPacket(receiveBuffer, receiveBuffer.length);
-                                clientSocket.receive(receivePacket);
-        
-                                packets = new ArrayList<>();
-                                receivedPacket = SerializationUtils.deserialize(receiveBuffer);
-                                packets.add(receivedPacket);
-                                for (byte i = 1; i < receivedPacket.getPacketsAmount(); i++) {
+            
+                                    packets = (ArrayList<Packet>) Packet.packObject(clientUUID, commandPayload);
+                                    Packet.clientSendPackets(clientSocket, packets, serverAddr, 37582);
+            
+                                    receiveBuffer = new byte[1024];
+                                    receivePacket = new DatagramPacket(receiveBuffer, receiveBuffer.length);
                                     clientSocket.receive(receivePacket);
+            
+                                    packets = new ArrayList<>();
                                     receivedPacket = SerializationUtils.deserialize(receiveBuffer);
                                     packets.add(receivedPacket);
+                                    for (byte i = 1; i < receivedPacket.getPacketsAmount(); i++) {
+                                        clientSocket.receive(receivePacket);
+                                        receivedPacket = SerializationUtils.deserialize(receiveBuffer);
+                                        packets.add(receivedPacket);
+                                    }
+                                    CommandResult result = (CommandResult) Packet.restoreObject(packets);
+                                    terminal.writer().println(result.getMessage());
+                                } else if (tokens[0].isBlank()) {} else if (tokens[0].equals("exit")) {
+                                    works = false;
+                                    sendPacket = new Packet(clientUUID, 1, 0, null);
+                                    serializedPacket = SerializationUtils.serialize(sendPacket); 
+                                    sendDatagramPacket = new DatagramPacket(serializedPacket, 1024, serverAddr, 37582);
+                                    clientSocket.send(sendDatagramPacket);
+                                    break;
+                                } else {
+                                    System.out.println("\u001B[31m" + input + " не распознано как имя команды. Введите help для справки." + "\u001B[0m");
                                 }
-                                CommandResult result = (CommandResult) Packet.restoreObject(packets);
-                                terminal.writer().println(result.getMessage());
-                            } else if (tokens[0].isBlank()) {} else if (tokens[0].equals("exit")) {
-                                works = false;
-                                sendPacket = new Packet(clientUUID, 1, 0, null);
-                                serializedPacket = SerializationUtils.serialize(sendPacket); 
-                                sendDatagramPacket = new DatagramPacket(serializedPacket, 1024, serverAddr, 37582);
-                                clientSocket.send(sendDatagramPacket);
-                                break;
-                            } else {
-                                System.out.println("\u001B[31m" + input + " не распознано как имя команды. Введите help для справки." + "\u001B[0m");
                             }
+                        } catch (UserInterruptException e) {
+                            Packet sendPacketShutdown = new Packet(clientUUID, 1, 0, null);
+                            byte[] serializedPacketShutdown = SerializationUtils.serialize(sendPacketShutdown); 
+                            DatagramPacket sendDatagramPacketShutdown = new DatagramPacket(serializedPacketShutdown, 1024, serverAddr, 37582);
+                            try {
+                                clientSocket.send(sendDatagramPacketShutdown);
+                            } catch (IOException e1) {
+                                e1.printStackTrace();
+                            }
+                            works = false;
                         }
                     } catch (IOException e) {
                         if (e instanceof SocketTimeoutException) {
