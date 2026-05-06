@@ -1,0 +1,325 @@
+@startuml
+skinparam linetype ortho
+
+package commons {
+  package models {
+    enum Color {
+      RED
+      BLACK
+      BLUE
+      YELLOW
+      BROWN
+    }
+
+    class Coordinates {
+      - x: Long
+      - y: float
+      + Coordinates(x: Long, y: float)
+      + getX(): Long
+      + getY(): float
+      + toString(): String
+    }
+
+    interface "Comparable<MusicBand>" as Comparable
+    interface Serializable
+
+    class MusicBand implements Comparable, Serializable {
+      - id: long
+      - name: String
+      - coordinates: Coordinates
+      - creationDate: java.util.Date
+      - numberOfParticipants: long
+      - singlesCount: long
+      - description: String
+      - genre: MusicGenre
+      - frontMan: Person
+      - {static} serialVersionUID: long
+      + MusicBand(name: String, coordinates: Coordinates, numberOfParticipants: long, singlesCount: long, description: String, genre: MusicGenre, frontMan: Person)
+      + getId(): long
+      + getName(): String
+      + getCoordinates(): Coordinates
+      + getCreationDate(): java.util.Date
+      + getNumberOfParticipants(): long
+      + getSinglesCount(): long
+      + getDescription(): String
+      + getGenre(): MusicGenre
+      + getFrontMan(): Person
+      + toString(): String
+      + compareTo(other: MusicBand): int
+      + setId(id: long): void
+    }
+
+    enum MusicGenre {
+      PSYCHEDELIC_ROCK
+      POP
+      MATH_ROCK
+      PUNK_ROCK
+    }
+
+    class Person implements Serializable {
+      - name: String
+      - birthday: java.time.LocalDate
+      - eyeColor: Color
+      + Person(name: String, birthday: LocalDate, eyeColor: Color)
+      + getName(): String
+      + getBirthday(): java.time.LocalDate
+      + getEyeColor(): Color
+      + toString(): String
+    }
+  }
+
+  package util {
+    class CommandPayload implements Serializable {
+      + commandName: String
+      + args: String[]
+      + band: MusicBand
+      - {static} serialVersionUID: long
+      + CommandPayload(commandName: String, args: String[], band: MusicBand)
+      + getCommandName(): String
+      + getArgs(): String[]
+      + getBand(): MusicBand
+      + setBand(band: MusicBand): void
+    }
+
+    class CommandResult implements Serializable {
+      - continueFlag: boolean
+      - message: String
+      - {static} serialVersionUID: long
+      + CommandResult(continueFlag: boolean, message: String)
+      + isContinueFlag(): boolean
+      + setContinueFlag(continueFlag: boolean): void
+      + getMessage(): String
+      + setMessage(message: String): void
+      + addToMessage(messageToAdd: String): void
+    }
+
+    interface "Comparable<Packet>" as ComparablePacket
+    class Packet implements Serializable, ComparablePacket {
+      + serializedClientUUID: byte[]
+      + packetsAmount: byte
+      + currentPacket: byte
+      + readableDataLength: short
+      + data: byte[]
+      - {static} MAX_PACKET_SIZE: int
+      + {static} DATA_LENGTH: int
+      + Packet(clientUUID: UUID, packetsAmount: byte, currentPacket: byte, data: byte[])
+      + {static} packObject(clientUUID: UUID, o: Serializable): List<Packet>
+      + {static} restoreObject(packets: ArrayList<Packet>): Serializable
+      + {static} serverSendPackets(server: DatagramChannel, packets: ArrayList<Packet>, address: SocketAddress): void
+      + {static} clientSendPackets(client: DatagramSocket, packets: ArrayList<Packet>, address: InetAddress, port: int): void
+      + getSerializedClientUUID(): byte[]
+      + getClientUUID(): UUID
+      + getPacketsAmount(): byte
+      + getCurrentPacket(): byte
+      + getReadableDataLength(): short
+      + getData(): byte[]
+      + getActualData(): byte[]
+      + compareTo(o: Packet): int
+    }
+  }
+}
+
+package server {
+  class MainServer {
+    + {static} main(args: String[]): void
+  }
+
+  package server.managers {
+    interface "TypeAdapter<LocalDate>" as TypeAdapter
+
+    class CollectionManager {
+      - collection: PriorityQueue<MusicBand>
+      - initTime: LocalDateTime
+      - {static} nextId: long
+      - {static} vacantIds: ArrayList<Long>
+      + CollectionManager()
+      + getCollection(): PriorityQueue<MusicBand>
+      + getInitTime(): LocalDateTime
+      + addElement(band: MusicBand): void
+      + clearCollection(): void
+      + removeElement(id: long): boolean
+      + {static} setNextId(nextId: long): void
+      + {static} getNextId(): long
+      + {static} fixId(band: MusicBand): void
+      + {static} getVacantIds(): ArrayList<Long>
+      + {static} setVacantIds(vacantIds: ArrayList<Long>): void
+      + {static} addVacantId(vacantId: Long): void
+    }
+
+    class CommandManager {
+      - commandsList: Map<String, Command>
+      - scriptFiles: ArrayList<File>
+      - recursionLimit: int
+      - recursionForcedExit: boolean
+      + CommandManager()
+      + register(command: Command): void
+      + getCommandsList(): Map<String, Command>
+      + getScriptFiles(): ArrayList<File>
+      + addScriptFile(file: File): void
+      + clearScriptFiles(): void
+      + checkRecursionExhaustion(file: File): boolean
+      + getRecursionLimit(): int
+      + isRecursionForcedExit(): boolean
+      + setRecursionForcedExit(recursionForcedExit: boolean): void
+    }
+
+    class FileManager {
+      - fileName: String
+      - gson: Gson
+      + FileManager(fileName: String)
+      + load(collectionManager: CollectionManager): void
+      + save(collectionManager: CollectionManager): void
+    }
+
+    class LocalDateAdapter extends TypeAdapter {
+      + write(jsonWriter: JsonWriter, localDate: LocalDate): void
+      + read(jsonReader: JsonReader): LocalDate
+    }
+
+    FileManager +-- LocalDateAdapter
+  }
+
+  package server.commands {
+    abstract class Command {
+      # name: String
+      - desc: String
+      - argsAmount: int
+      # commandManager: CommandManager
+      # collectionManager: CollectionManager
+      + Command(name: String, desc: String, argsAmount: int, collectionManager: CollectionManager)
+      + {abstract} run(args: String[], band: MusicBand): CommandResult
+      + getName(): String
+      + getDesc(): String
+      + getCommandManager(): CommandManager
+      + getCollectionManager(): CollectionManager
+      + setCommandManager(commandManager: CommandManager): void
+      + checkArgAmount(args: String[]): CommandResult
+      + {static} RemoveEmptyElements(input: String[]): String[]
+    }
+
+    class Add extends Command {
+      + Add(collectionManager: CollectionManager)
+      + run(args: String[], band: MusicBand): CommandResult
+    }
+    class AddIfMax extends Command {
+      + AddIfMax(collectionManager: CollectionManager)
+      + run(args: String[], band: MusicBand): CommandResult
+    }
+    class AddIfMin extends Command {
+      + AddIfMin(collectionManager: CollectionManager)
+      + run(args: String[], band: MusicBand): CommandResult
+    }
+    class Clear extends Command {
+      + Clear(collectionManager: CollectionManager)
+      + run(args: String[], band: MusicBand): CommandResult
+    }
+    class CountLessThanDescription extends Command {
+      + CountLessThanDescription(collectionManager: CollectionManager)
+      + run(args: String[], band: MusicBand): CommandResult
+    }
+    class Exit extends Command {
+      + Exit(collectionManager: CollectionManager)
+      + run(args: String[], band: MusicBand): CommandResult
+    }
+    class FilterContainsName extends Command {
+      + FilterContainsName(collectionManager: CollectionManager)
+      + run(args: String[], band: MusicBand): CommandResult
+    }
+    class FilterGreaterThanGenre extends Command {
+      + FilterGreaterThanGenre(collectionManager: CollectionManager)
+      + run(args: String[], band: MusicBand): CommandResult
+    }
+    class Head extends Command {
+      + Head(collectionManager: CollectionManager)
+      + run(args: String[], band: MusicBand): CommandResult
+    }
+    class Help extends Command {
+      + Help(collectionManager: CollectionManager)
+      + run(args: String[], band: MusicBand): CommandResult
+    }
+    class Info extends Command {
+      + Info(collectionManager: CollectionManager)
+      + run(args: String[], band: MusicBand): CommandResult
+    }
+    class RemoveById extends Command {
+      + RemoveById(collectionManager: CollectionManager)
+      + run(args: String[], band: MusicBand): CommandResult
+    }
+    class Save extends Command {
+      - fileManager: FileManager
+      + Save(collectionManager: CollectionManager, fileManager: FileManager)
+      + run(args: String[], band: MusicBand): CommandResult
+    }
+    class Script extends Command {
+      + Script(collectionManager: CollectionManager)
+      + run(args: String[], band: MusicBand): CommandResult
+    }
+    class Show extends Command {
+      + Show(collectionManager: CollectionManager)
+      + run(args: String[], band: MusicBand): CommandResult
+    }
+    class Update extends Command {
+      + Update(collectionManager: CollectionManager)
+      + run(args: String[], band: MusicBand): CommandResult
+    }
+  }
+}
+
+package client {
+  class MainClient {
+    + {static} main(args: String[]): void
+  }
+
+  package client.managers {
+    class ConsoleManager {
+      - terminal: Terminal
+      - reader: LineReader
+      + ConsoleManager(terminal: Terminal, reader: LineReader)
+      + ConsoleManager(terminal: Terminal)
+      + getTerminal(): Terminal
+      + getReader(): LineReader
+      + askName(): String
+      + askX(): Long
+      + askY(): float
+      + askCoordinates(): Coordinates
+      + askNumberOfParticipants(): long
+      + askSinglesCount(): long
+      + askDescription(): String
+      + askMusicGenre(): MusicGenre
+      + askPersonName(): String
+      + askBirthday(): LocalDate
+      + askColor(): Color
+      + askFrontMan(): Person
+      + askMusicBand(): MusicBand
+      + setTerminal(terminal: Terminal): void
+      + setReader(reader: LineReader): void
+    }
+  }
+}
+
+MusicBand *-- Coordinates
+MusicBand *-- MusicGenre
+MusicBand *-- Person
+Person *-- Color
+
+CommandPayload o-- MusicBand
+CommandResult <-- Command : returns
+Packet ..> Serializable : packs/restores
+
+CommandManager o-- Command
+CollectionManager o-- MusicBand
+FileManager ..> CollectionManager : loads/saves
+
+MainClient --> ConsoleManager : uses
+MainClient --> Packet : uses
+MainClient --> CommandPayload : creates/sends
+MainClient <-- CommandResult : receives
+
+MainServer --> CommandManager : uses
+MainServer --> CollectionManager : uses
+MainServer --> FileManager : uses
+MainServer --> Packet : uses
+MainServer <-- CommandPayload : receives
+MainServer --> CommandResult : creates/sends
+
+@enduml
